@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Circle Route Analyzer</title>
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <style>
+        #map {
+            height: 600px;
+            width: 100%;
+            margin-top: 20px;
+        }
+        .controls {
+            margin: 20px;
+        }
+        .legend {
+            margin: 20px;
+            padding: 10px;
+            background: #fff;
+            border: 1px solid #ccc;
+        }
+        .legend-item {
+            margin: 5px 0;
+        }
+        .legend-color {
+            display: inline-block;
+            width: 20px;
+            height: 3px;
+            margin-right: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="controls">
+        <input type="file" id="gpxFile" accept=".gpx">
+        <button onclick="analyzeFile()">Analyze Route</button>
+    </div>
+
+    <div class="legend">
+        <div class="legend-item">
+            <span class="legend-color" style="background: blue;"></span>
+            Original GPX Track
+        </div>
+        <div class="legend-item">
+            <span class="legend-color" style="background: green;"></span>
+            Perfect Circle
+        </div>
+        <div class="legend-item">
+            <span class="legend-color" style="background: red;"></span>
+            Inner Boundary
+        </div>
+        <div class="legend-item">
+            <span class="legend-color" style="background: orange;"></span>
+            Outer Boundary
+        </div>
+    </div>
+
+    <div id="map"></div>
+
+    <!-- Scripts -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="
+https://cdn.jsdelivr.net/npm/gpxparser@3.0.8/dist/GPXParser.min.js
+"></script>
+    <script src="circle_detector.js"></script>
+    <script>
+        let map;
+        let trackLayer, perfectCircleLayer, innerCircleLayer, outerCircleLayer;
+        const circleDetector = new CircleDetector();
+
+        // Initialize map
+        function initMap() {
+            map = L.map('map').setView([51.505, -0.09], 13);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors'
+            }).addTo(map);
+        }
+
+        // Clear existing layers
+        function clearLayers() {
+            if (trackLayer) map.removeLayer(trackLayer);
+            if (perfectCircleLayer) map.removeLayer(perfectCircleLayer);
+            if (innerCircleLayer) map.removeLayer(innerCircleLayer);
+            if (outerCircleLayer) map.removeLayer(outerCircleLayer);
+        }
+
+        // Analyze GPX file
+        function analyzeFile() {
+            const fileInput = document.getElementById('gpxFile');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                alert('Please select a GPX file first');
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const gpx = new gpxParser();
+                gpx.parse(e.target.result);
+                
+                if (gpx.tracks.length === 0) {
+                    alert('No tracks found in GPX file');
+                    return;
+                }
+
+                // Convert GPX points to format needed by CircleDetector
+                const points = gpx.tracks[0].points.map(p => ({
+                    lat: p.lat,
+                    lon: p.lon
+                }));
+
+                // Analyze the track
+                const analysis = circleDetector.analyzeTrack(points);
+
+                // Clear existing layers
+                clearLayers();
+
+                if (!analysis.isCircular) {
+                    trackLayer = L.polyline(points.map(p => [p.lat, p.lon]), {
+                        color: 'blue',
+                        weight: 3
+                    }).addTo(map);
+                    map.fitBounds(trackLayer.getBounds());
+                    alert('The track is not circular');
+                    return;
+                }
+
+
+                // Draw original track
+                trackLayer = L.polyline(points.map(p => [p.lat, p.lon]), {
+                    color: 'blue',
+                    weight: 3
+                }).addTo(map);
+
+                // Draw perfect circle
+                perfectCircleLayer = L.polyline(analysis.circles.perfect, {
+                    color: 'green',
+                    weight: 2
+                }).addTo(map);
+
+                // Draw inner boundary
+                innerCircleLayer = L.polyline(analysis.circles.inner, {
+                    color: 'red',
+                    weight: 2,
+                    dashArray: '5, 10'
+                }).addTo(map);
+
+                // Draw outer boundary
+                outerCircleLayer = L.polyline(analysis.circles.outer, {
+                    color: 'orange',
+                    weight: 2,
+                    dashArray: '5, 10'
+                }).addTo(map);
+
+                // Fit map to track bounds
+                map.fitBounds(trackLayer.getBounds());
+
+                // Show analysis results
+                alert(`Analysis Results:
+                    Is Circular: ${analysis.isCircular}
+                    Average Radius: ${analysis.details.averageRadius.toFixed(2)} km
+                    Radius Variance: ${(analysis.details.radiusVariance * 100).toFixed(2)}%
+                    Start-End Distance: ${analysis.details.startEndDistance.toFixed(2)} km`);
+            };
+            
+            reader.readAsText(file);
+        }
+
+        // Initialize map when page loads
+        window.onload = initMap;
+    </script>
+</body>
+</html> 
